@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>LocalDrop</title>
+<style>
+:root{
+  --bg:#08090a;
+  --panel:#0b0c0e;
+  --panel-2:#0e1012;
+  --hover:#111316;
+  --line:#1d1f22;
+  --line-soft:#16181a;
+  --line-strong:#26282c;
+  --dash:#34373c;
+  --text:#e8eaec;
+  --text-2:#c9cbcf;
+  --muted:#8b8e93;
+  --muted-2:#7a7d83;
+  --accent:#d7f56a;
+  --accent-ink:#0b0c0d;
+  --danger:#ff8f6a;
+  --mono:ui-monospace,SFMono-Regular,"JetBrains Mono","Cascadia Mono",Menlo,Consolas,"Roboto Mono","DejaVu Sans Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:#050506;
+  color:var(--text-2);
+  font-family:var(--mono);
+  font-size:13px;
+  -webkit-font-smoothing:antialiased;
+  padding:24px;
+  display:flex;
+  justify-content:center;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{width:100%;max-width:1040px;background:var(--bg);border:1px solid var(--line)}
+
+/* ---------- topbar ---------- */
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;
+  padding:12px 16px;border-bottom:1px solid var(--line);font-size:12px}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+.brand__name{color:var(--accent);font-weight:700}
+.brand__meta{color:var(--muted-2)}
+.topbar__right{display:flex;align-items:center;gap:16px;font-size:11px}
+.addr{color:var(--muted-2)}
+.status-pill{display:flex;align-items:center;gap:6px;color:var(--accent);letter-spacing:.08em}
+.status-pill__dot{width:6px;height:6px;background:var(--accent)}
+
+/* ---------- layout ---------- */
+.main{display:grid;grid-template-columns:1fr 230px}
+.col{padding:22px;display:flex;flex-direction:column;gap:18px}
+.col--main{border-right:1px solid var(--line);min-width:0}
+.col--side{padding:22px 18px;gap:12px}
+
+/* ---------- dropzone ---------- */
+.drop{border:1px dashed var(--dash);padding:30px 22px;display:flex;flex-direction:column;gap:8px;
+  background:repeating-linear-gradient(135deg,rgba(215,245,106,.045) 0 1px,transparent 1px 7px);
+  transition:border-color .15s,background-color .15s;cursor:pointer}
+.drop.is-over,.drop:hover{border-color:var(--accent)}
+.drop__title{color:var(--text)}
+.drop__hint{color:var(--muted);font-size:12px}
+.drop__chosen{display:none;gap:10px;align-items:baseline;margin-top:4px;font-size:12px}
+.drop__chosen.is-shown{display:flex}
+.drop__chosen-name{color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drop__chosen-size{color:var(--muted);flex:none}
+
+.paste{border:1px dashed var(--dash);padding:14px 22px;color:var(--muted);font-size:12px;
+  outline:none;cursor:text;caret-color:transparent}
+.paste:hover,.paste:focus{border-color:var(--accent);color:var(--text-2)}
+.paste__key{color:var(--accent)}
+
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{padding:9px 16px;font-size:12px;letter-spacing:.06em;border:1px solid transparent;background:none}
+.btn--primary{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.btn--primary:hover:not(:disabled){filter:brightness(1.08)}
+.btn--primary:disabled{opacity:.35;cursor:not-allowed}
+.btn--ghost{border-color:var(--line-strong);color:var(--text-2)}
+.btn--ghost:hover{border-color:var(--dash);color:var(--text)}
+
+.status{min-height:16px;font-size:12px;color:var(--muted)}
+.status.is-ok{color:var(--accent)}
+.status.is-err{color:var(--danger)}
+
+/* ---------- files ---------- */
+.files{display:flex;flex-direction:column;gap:8px;min-width:0}
+.files__head{display:flex;justify-content:space-between;align-items:center;
+  font-size:11px;color:var(--muted);letter-spacing:.1em}
+.search{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel);padding:0 12px}
+.search:focus-within{border-color:var(--dash)}
+.search__slash{color:var(--muted-2);font-size:12px}
+.search__input{flex:1;min-width:0;background:none;border:0;outline:none;color:var(--text);
+  font-family:var(--mono);font-size:12px;padding:11px 0}
+.search__input::placeholder{color:var(--muted-2)}
+.search__kbd{font-size:10px;color:var(--muted-2);border:1px solid var(--line-strong);padding:2px 5px;flex:none}
+
+.list{display:flex;flex-direction:column}
+.row{display:grid;grid-template-columns:1fr 88px 128px 112px;gap:12px;align-items:center;
+  padding:11px 12px;border-bottom:1px solid var(--line-soft);font-size:12px}
+.row:nth-child(even){background:var(--panel-2)}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--hover)}
+.row__name{color:var(--text);display:flex;align-items:center;gap:10px;min-width:0}
+.row__label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row__glyph{flex:none;width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--line-strong);background:var(--panel);
+  font-size:9px;letter-spacing:.04em;color:var(--muted);text-transform:uppercase;overflow:hidden}
+img.row__glyph{object-fit:cover}
+.row__meta{color:var(--muted)}
+.row__actions{display:flex;gap:10px;justify-content:flex-end}
+.row__act{background:none;border:0;padding:2px 0;color:var(--accent);font-size:12px}
+.row__act:hover{text-decoration:underline}
+.row__act--danger{color:var(--muted)}
+.row__act--danger:hover{color:var(--danger)}
+.empty{padding:22px 12px;color:var(--muted);font-size:12px}
+.row__thumb{flex:none;padding:0;border:0;background:none;display:flex}
+.row__thumb:hover .row__glyph{border-color:var(--accent)}
+
+/* ---------- image viewer ---------- */
+.viewer{padding:0;border:1px solid var(--line-strong);background:var(--bg);color:var(--text-2);
+  width:min(920px,calc(100vw - 32px));max-height:calc(100vh - 32px)}
+.viewer::backdrop{background:rgba(0,0,0,.8)}
+.viewer__inner{display:flex;flex-direction:column;max-height:calc(100vh - 34px)}
+.viewer__head{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:10px 14px;border-bottom:1px solid var(--line);font-size:12px}
+.viewer__name{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer__body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
+  background:var(--panel);padding:12px;overflow:auto}
+.viewer__img{max-width:100%;max-height:calc(100vh - 170px);object-fit:contain;display:block}
+.viewer__foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
+.viewer__status{flex:1;min-width:140px;font-size:12px;color:var(--muted)}
+.viewer__status.is-ok{color:var(--accent)}
+.viewer__status.is-err{color:var(--danger)}
+
+/* ---------- side ---------- */
+.side__label{font-size:11px;letter-spacing:.1em;color:var(--muted)}
+.qr{aspect-ratio:1;border:1px solid var(--line-strong);background:var(--panel);overflow:hidden}
+.qr.is-hidden{display:none}
+.qr img{width:100%;height:100%;display:block;image-rendering:pixelated}
+.side__addr{color:var(--accent);font-size:13px;word-break:break-all;line-height:1.5}
+.side__note{font-size:11px;line-height:1.6;color:var(--muted)}
+.side__note--narrow{display:none}
+
+/* ---------- mobile ---------- */
+@media (max-width:760px){
+  body{padding:0}
+  .app{border:0;min-height:100vh}
+  .topbar{padding:12px 14px;font-size:11px}
+  .brand__meta,.addr{display:none}
+  .main{grid-template-columns:1fr}
+  .col--main{border-right:0;border-bottom:1px solid var(--line);padding:14px}
+  .col--side{padding:14px}
+  /* On a phone you are already connected: the QR would only take up space. */
+  .qr{display:none}
+  .side__note--wide{display:none}
+  .side__note--narrow{display:inline}
+  .drop{padding:22px 12px;text-align:center;align-items:center}
+  .btn{padding:13px 16px}
+  .actions .btn{flex:1}
+  .search__kbd{display:none}
+  .row{grid-template-columns:1fr auto;grid-template-areas:"name act" "meta act";
+    gap:4px 12px;padding:12px 0;row-gap:3px}
+  .row__name{grid-area:name}
+  .row__size{grid-area:meta;font-size:11px}
+  .row__date{display:none}
+  .row__actions{grid-area:act;align-self:center}
+  .row__act{min-height:44px;min-width:44px;display:flex;align-items:center;justify-content:center}
+}
+</style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand__name">localdrop</span>
+        <span class="brand__meta">android &harr; pc</span>
+      </div>
+      <div class="topbar__right">
+        <span class="addr" id="addr">cargando...</span>
+        <span class="status-pill"><span class="status-pill__dot"></span>LAN OK</span>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="col col--main">
+        <div class="drop" id="drop" role="button" tabindex="0" aria-label="Seleccionar o soltar un archivo">
+          <div class="drop__title">&gt; arrastrá un archivo acá</div>
+          <div class="drop__hint">o tocá para buscarlo. se sube a esta PC y queda disponible en la red local.</div>
+          <div class="drop__chosen" id="chosen">
+            <span class="drop__chosen-name" id="chosenName"></span>
+            <span class="drop__chosen-size" id="chosenSize"></span>
+          </div>
+          <input type="file" id="fileInput" hidden>
+        </div>
+
+        <!-- contenteditable so phones offer "Paste" on long-press; the content itself is never kept. -->
+        <div class="paste" id="paste" contenteditable="true" role="textbox" tabindex="0"
+             aria-label="Pegar una imagen para compartirla">
+          &gt; o pegá una imagen: <span class="paste__key">CTRL V</span> en la página, o mantené presionado acá y elegí pegar.
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn btn--primary" id="uploadBtn" disabled>SUBIR</button>
+          <button type="button" class="btn btn--ghost" id="refreshBtn">ACTUALIZAR</button>
+        </div>
+        <div class="status" id="status" role="status" aria-live="polite"></div>
+
+        <section class="files">
+          <div class="files__head">
+            <span id="fileCount">ARCHIVOS</span>
+            <span>ORDEN: RECIENTE &darr;</span>
+          </div>
+
+          <label class="search">
+            <span class="search__slash" aria-hidden="true">/</span>
+            <input class="search__input" id="q" type="search" placeholder="filtrar por nombre..." aria-label="Filtrar archivos por nombre">
+            <span class="search__kbd" aria-hidden="true">CTRL K</span>
+          </label>
+
+          <div class="list" id="list"></div>
+        </section>
+      </div>
+
+      <aside class="col col--side">
+        <div class="side__label">CONECTAR</div>
+        <div class="qr" id="qr">
+          <img id="qrImg" src="/api/qr" alt="Código QR con la dirección del servidor">
+        </div>
+        <div class="side__addr" id="sideAddr">...</div>
+        <div class="side__note">
+          <span class="side__note--wide">escaneá el QR con el celular, o abrí esa dirección a mano.</span>
+          <span class="side__note--narrow">abrí esta dirección desde otro equipo de la red.</span>
+          Tiene que estar en la misma red Wi-Fi.
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <dialog class="viewer" id="viewer" aria-labelledby="viewerName">
+    <div class="viewer__inner">
+      <div class="viewer__head">
+        <span class="viewer__name" id="viewerName"></span>
+        <button type="button" class="btn btn--ghost" id="viewerClose" aria-label="Cerrar">ESC</button>
+      </div>
+      <div class="viewer__body">
+        <img class="viewer__img" id="viewerImg" alt="">
+      </div>
+      <div class="viewer__foot">
+        <span class="viewer__status" id="viewerStatus" role="status" aria-live="polite"></span>
+        <button type="button" class="btn btn--primary" id="viewerCopy">COPIAR</button>
+        <button type="button" class="btn btn--ghost" id="viewerGet">GET</button>
+      </div>
+    </div>
+  </dialog>
+
+<script>
+  const drop = document.getElementById("drop");
+  const fileInput = document.getElementById("fileInput");
+  const chosen = document.getElementById("chosen");
+  const chosenName = document.getElementById("chosenName");
+  const chosenSize = document.getElementById("chosenSize");
+  const uploadBtn = document.getElementById("uploadBtn");
+  const refreshBtn = document.getElementById("refreshBtn");
+  const list = document.getElementById("list");
+  const fileCount = document.getElementById("fileCount");
+  const statusEl = document.getElementById("status");
+  const addrEl = document.getElementById("addr");
+  const sideAddrEl = document.getElementById("sideAddr");
+  const qrBox = document.getElementById("qr");
+  const qrImg = document.getElementById("qrImg");
+  const q = document.getElementById("q");
+
+  // Hide the QR frame rather than showing a broken image if generation fails.
+  qrImg.addEventListener("error", () => qrBox.classList.add("is-hidden"));
+
+  // ---- Server address ----
+  fetch("/api/netinfo")
+    .then((r) => r.json())
+    .then((info) => { setAddress(`${info.ip}:${info.port}`); })
+    .catch(() => { setAddress(window.location.host); });
+
+  function setAddress(hostPort) {
+    addrEl.textContent = hostPort;
+    sideAddrEl.textContent = `http://${hostPort}`;
+  }
+
+  // ---- File selection (click + keyboard + drag & drop) ----
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+  });
+
+  fileInput.addEventListener("change", () => showChosen(fileInput.files[0]));
+
+  ["dragenter", "dragover"].forEach((evt) =>
+    drop.addEventListener(evt, (e) => { e.preventDefault(); drop.classList.add("is-over"); })
+  );
+  ["dragleave", "drop"].forEach((evt) =>
+    drop.addEventListener(evt, (e) => { e.preventDefault(); drop.classList.remove("is-over"); })
+  );
+  drop.addEventListener("drop", (e) => {
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    fileInput.files = e.dataTransfer.files;
+    showChosen(file);
+  });
+
+  function showChosen(file) {
+    if (!file) { chosen.classList.remove("is-shown"); uploadBtn.disabled = true; return; }
+    chosenName.textContent = file.name;
+    chosenSize.textContent = formatBytes(file.size);
+    chosen.classList.add("is-shown");
+    uploadBtn.disabled = false;
+    setStatus("");
+  }
+
+  uploadBtn.addEventListener("click", uploadFile);
+  refreshBtn.addEventListener("click", loadFiles);
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (kind ? " is-" + kind : "");
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
+  function formatDate(utc) {
+    const d = new Date(utc);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function extOf(name) {
+    const dot = name.lastIndexOf(".");
+    return dot > 0 ? name.slice(dot + 1).slice(0, 4) : "file";
+  }
+
+  const IMAGE_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "avif"];
+  function isImage(name) {
+    const dot = name.lastIndexOf(".");
+    if (dot < 0) return false;
+    return IMAGE_EXTS.includes(name.slice(dot + 1).toLowerCase());
+  }
+
+  async function uploadFile() {
+    const file = fileInput.files[0];
+    if (!file) { setStatus("Elegí un archivo primero.", "err"); return; }
+
+    uploadBtn.disabled = true;
+    setStatus("Subiendo...");
+
+    try {
+      await postFile(file, file.name);
+      fileInput.value = "";
+      showChosen(null);
+      setStatus("Archivo subido correctamente.", "ok");
+      await loadFiles();
+    } catch (err) {
+      uploadBtn.disabled = false;
+      setStatus(err.message === "413"
+        ? "El archivo supera el límite de subida del servidor."
+        : "Error al subir el archivo.", "err");
+    }
+  }
+
+  async function postFile(blob, fileName) {
+    const formData = new FormData();
+    formData.append("file", blob, fileName);
+    const response = await fetch("/api/files/upload", { method: "POST", body: formData });
+    if (!response.ok) throw new Error(String(response.status));
+  }
+
+  // ---- Paste an image (shared immediately, no file picker) ----
+  const pasteZone = document.getElementById("paste");
+  const pasteHint = pasteZone.innerHTML;
+
+  // Pasted images usually arrive as "image.png" and the server overwrites on name clashes,
+  // so every paste gets its own timestamped name.
+  function pastedName(type, index) {
+    const d = new Date();
+    const pad = (n, w = 2) => String(n).padStart(w, "0");
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-` +
+      `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${pad(d.getMilliseconds(), 3)}`;
+    const ext = (type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/\+.*$/, "");
+    return `paste-${stamp}${index ? "-" + index : ""}.${ext}`;
+  }
+
+  async function handlePaste(e) {
+    const images = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) {
+      // Let text paste work normally in the search box; only the paste zone reacts.
+      if (e.currentTarget === pasteZone) {
+        e.preventDefault();
+        setStatus("El portapapeles no tiene una imagen.", "err");
+      }
+      return;
+    }
+    e.preventDefault();
+    setStatus("Compartiendo imagen...");
+    try {
+      for (let i = 0; i < images.length; i++) {
+        await postFile(images[i], pastedName(images[i].type, i));
+      }
+      setStatus(images.length === 1 ? "Imagen pegada y compartida." : `${images.length} imágenes compartidas.`, "ok");
+      await loadFiles();
+    } catch (err) {
+      setStatus(err.message === "413"
+        ? "La imagen supera el límite de subida del servidor."
+        : "No se pudo compartir la imagen.", "err");
+    } finally {
+      pasteZone.innerHTML = pasteHint;
+      pasteZone.blur();
+    }
+  }
+
+  pasteZone.addEventListener("paste", (e) => { e.stopPropagation(); handlePaste(e); });
+  // Anything typed or dropped into the zone would edit the hint text; keep it read-only in practice.
+  pasteZone.addEventListener("beforeinput", (e) => { if (e.inputType !== "insertFromPaste") e.preventDefault(); });
+  document.addEventListener("paste", (e) => {
+    if (viewer.open) return;
+    handlePaste(e);
+  });
+
+  async function loadFiles() {
+    let files;
+    try {
+      const response = await fetch("/api/files");
+      if (!response.ok) throw new Error();
+      files = await response.json();
+    } catch {
+      setStatus("No se pudo obtener la lista.", "err");
+      return;
+    }
+
+    list.innerHTML = "";
+    fileCount.textContent = `ARCHIVOS - ${files.length}`;
+
+    if (files.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "todavía no hay archivos.";
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const file of files) {
+      list.appendChild(buildRow(file));
+    }
+    applyFilter();
+  }
+
+  function buildRow(file) {
+    const fileUrl = `/api/files/${encodeURIComponent(file.name)}`;
+
+    const row = document.createElement("div");
+    row.className = "row";
+    row.dataset.name = file.name.toLowerCase();
+
+    const name = document.createElement("span");
+    name.className = "row__name";
+
+    const image = isImage(file.name);
+    let glyph;
+    if (image) {
+      glyph = document.createElement("img");
+      glyph.src = fileUrl;
+      glyph.alt = "";
+      glyph.loading = "lazy";
+    } else {
+      glyph = document.createElement("span");
+      glyph.textContent = extOf(file.name);
+    }
+    glyph.className = "row__glyph";
+
+    const label = document.createElement("span");
+    label.className = "row__label";
+    label.textContent = file.name;
+
+    if (image) {
+      const thumb = document.createElement("button");
+      thumb.type = "button";
+      thumb.className = "row__thumb";
+      thumb.setAttribute("aria-label", `Ver ${file.name}`);
+      thumb.onclick = () => openViewer(file.name, fileUrl);
+      thumb.appendChild(glyph);
+      name.appendChild(thumb);
+    } else {
+      name.appendChild(glyph);
+    }
+    name.appendChild(label);
+
+    const size = document.createElement("span");
+    size.className = "row__meta row__size";
+    size.textContent = formatBytes(file.sizeBytes);
+
+    const date = document.createElement("span");
+    date.className = "row__meta row__date";
+    date.textContent = formatDate(file.lastModifiedUtc);
+
+    const actions = document.createElement("span");
+    actions.className = "row__actions";
+
+    const get = document.createElement("button");
+    get.type = "button";
+    get.className = "row__act";
+    get.textContent = "GET";
+    get.setAttribute("aria-label", `Descargar ${file.name}`);
+    get.onclick = () => { window.location.href = fileUrl; };
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "row__act row__act--danger";
+    del.textContent = "DEL";
+    del.setAttribute("aria-label", `Borrar ${file.name}`);
+    del.onclick = async () => {
+      if (!confirm(`¿Borrar ${file.name}?`)) return;
+      try {
+        const response = await fetch(fileUrl, { method: "DELETE" });
+        if (!response.ok) throw new Error();
+        setStatus("Archivo borrado.", "ok");
+        await loadFiles();
+      } catch {
+        setStatus("No se pudo borrar el archivo.", "err");
+      }
+    };
+
+    if (image) {
+      const view = document.createElement("button");
+      view.type = "button";
+      view.className = "row__act";
+      view.textContent = "OPEN";
+      view.setAttribute("aria-label", `Ver ${file.name}`);
+      view.onclick = () => openViewer(file.name, fileUrl);
+      actions.appendChild(view);
+    }
+    actions.appendChild(get);
+    actions.appendChild(del);
+
+    row.appendChild(name);
+    row.appendChild(size);
+    row.appendChild(date);
+    row.appendChild(actions);
+    return row;
+  }
+
+  // ---- Image viewer ----
+  const viewer = document.getElementById("viewer");
+  const viewerName = document.getElementById("viewerName");
+  const viewerImg = document.getElementById("viewerImg");
+  const viewerStatus = document.getElementById("viewerStatus");
+  const viewerCopy = document.getElementById("viewerCopy");
+  const viewerGet = document.getElementById("viewerGet");
+  let viewerUrl = null;
+
+  // Writing images to the clipboard requires a secure context (HTTPS or localhost).
+  // Over plain http://<lan-ip> browsers do not expose navigator.clipboard at all.
+  const canCopyImages = window.isSecureContext && !!navigator.clipboard?.write && typeof ClipboardItem !== "undefined";
+
+  function setViewerStatus(text, kind) {
+    viewerStatus.textContent = text;
+    viewerStatus.className = "viewer__status" + (kind ? " is-" + kind : "");
+  }
+
+  function openViewer(fileName, fileUrl) {
+    viewerUrl = fileUrl;
+    viewerName.textContent = fileName;
+    viewerImg.alt = fileName;
+    viewerImg.src = fileUrl;
+    viewerCopy.disabled = !canCopyImages;
+    // Without the Clipboard API, the browser's own long-press menu still offers "Copy image".
+    setViewerStatus(canCopyImages ? "" : "mantené presionada la imagen para copiarla.");
+    viewer.showModal();
+  }
+
+  viewer.addEventListener("close", () => {
+    viewerImg.removeAttribute("src");
+    viewerUrl = null;
+  });
+  // Close when clicking the backdrop (the click target is the dialog itself).
+  viewer.addEventListener("click", (e) => { if (e.target === viewer) viewer.close(); });
+  document.getElementById("viewerClose").addEventListener("click", () => viewer.close());
+  viewerGet.addEventListener("click", () => { if (viewerUrl) window.location.href = viewerUrl; });
+
+  // Browsers only reliably accept image/png in the clipboard, so every format is re-encoded via canvas.
+  async function toPngBlob(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(String(response.status));
+    const blob = await response.blob();
+    if (blob.type === "image/png") return blob;
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      img.src = objectUrl;
+      await img.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || 1024;
+      canvas.height = img.naturalHeight || 1024;
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      return await new Promise((resolve, reject) =>
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode"))), "image/png"));
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  viewerCopy.addEventListener("click", async () => {
+    if (!viewerUrl || !canCopyImages) return;
+    viewerCopy.disabled = true;
+    setViewerStatus("copiando...");
+    try {
+      // Pass the promise (not the resolved blob) so Safari keeps the user-gesture context.
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": toPngBlob(viewerUrl) })]);
+      setViewerStatus("imagen copiada al portapapeles.", "ok");
+    } catch (err) {
+      setViewerStatus(err?.name === "NotAllowedError"
+        ? "el navegador bloqueó el acceso al portapapeles."
+        : "no se pudo copiar la imagen.", "err");
+    } finally {
+      viewerCopy.disabled = false;
+    }
+  });
+
+  // ---- Filter ----
+  function applyFilter() {
+    const term = q.value.trim().toLowerCase();
+    list.querySelectorAll(".row").forEach((row) => {
+      row.style.display = row.dataset.name.includes(term) ? "" : "none";
+    });
+  }
+
+  q.addEventListener("input", applyFilter);
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); q.focus(); }
+  });
+
+  loadFiles();
+</script>
+</body>
+</html>

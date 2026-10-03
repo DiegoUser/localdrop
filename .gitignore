@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+
+# Uploaded files: whatever people shared over the LAN, never part of the project.
+LocalDrop.Api/Storage/
+
+# Design explorations with real names and addresses in them; the app is the source of truth.
+design/
+
+# Editor and OS noise
+.vs/
+*.user
+Thumbs.db
+desktop.ini
+
+# Local AI tooling: per-machine state, not part of the project.
+.atl/
+.claude/
+odd/

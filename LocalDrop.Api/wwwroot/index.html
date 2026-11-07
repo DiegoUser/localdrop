@@ -74,6 +74,10 @@ button{font:inherit;color:inherit;cursor:pointer}
   outline:none;cursor:text;caret-color:transparent}
 .paste:hover,.paste:focus{border-color:var(--accent);color:var(--text-2)}
 .paste__key{color:var(--accent)}
+.paste-fmt{display:flex;align-items:center;gap:6px;margin-top:-6px;font-size:12px;color:var(--muted)}
+.paste-fmt__opt{font:inherit;font-size:11px;padding:3px 8px;border:1px solid var(--line-strong);
+  background:none;color:var(--muted);cursor:pointer}
+.paste-fmt__opt[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 .btn{padding:9px 16px;font-size:12px;letter-spacing:.06em;border:1px solid transparent;background:none}
@@ -121,7 +125,7 @@ img.row__glyph{object-fit:cover}
 .row__thumb{flex:none;padding:0;border:0;background:none;display:flex}
 .row__thumb:hover .row__glyph{border-color:var(--accent)}
 
-/* ---------- image viewer ---------- */
+/* ---------- file viewer (images and text) ---------- */
 .viewer{padding:0;border:1px solid var(--line-strong);background:var(--bg);color:var(--text-2);
   width:min(920px,calc(100vw - 32px));max-height:calc(100vh - 32px)}
 .viewer::backdrop{background:rgba(0,0,0,.8)}
@@ -132,6 +136,11 @@ img.row__glyph{object-fit:cover}
 .viewer__body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
   background:var(--panel);padding:12px;overflow:auto}
 .viewer__img{max-width:100%;max-height:calc(100vh - 170px);object-fit:contain;display:block}
+.viewer__body.is-text{align-items:stretch;justify-content:flex-start;padding:0}
+.viewer__text{margin:0;width:100%;max-height:calc(100vh - 150px);overflow:auto;padding:18px 22px;
+  color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.65;
+  white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4}
+.viewer__img[hidden],.viewer__text[hidden]{display:none}
 .viewer__foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
 .viewer__status{flex:1;min-width:140px;font-size:12px;color:var(--muted)}
 .viewer__status.is-ok{color:var(--accent)}
@@ -200,8 +209,13 @@ img.row__glyph{object-fit:cover}
 
         <!-- contenteditable so phones offer "Paste" on long-press; the content itself is never kept. -->
         <div class="paste" id="paste" contenteditable="true" role="textbox" tabindex="0"
-             aria-label="Pegar una imagen para compartirla">
-          &gt; o pegá una imagen: <span class="paste__key">CTRL V</span> en la página, o mantené presionado acá y elegí pegar.
+             aria-label="Pegar una imagen o texto para compartirlo">
+          &gt; o pegá una imagen o texto: <span class="paste__key">CTRL V</span> en la página, o mantené presionado acá y elegí pegar.
+        </div>
+        <div class="paste-fmt" role="group" aria-label="Formato del texto pegado">
+          <span>texto como:</span>
+          <button type="button" class="paste-fmt__opt" data-ext="txt" aria-pressed="true">.TXT</button>
+          <button type="button" class="paste-fmt__opt" data-ext="md" aria-pressed="false">.MD</button>
         </div>
 
         <div class="actions">
@@ -247,8 +261,9 @@ img.row__glyph{object-fit:cover}
         <span class="viewer__name" id="viewerName"></span>
         <button type="button" class="btn btn--ghost" id="viewerClose" aria-label="Cerrar">ESC</button>
       </div>
-      <div class="viewer__body">
+      <div class="viewer__body" id="viewerBody">
         <img class="viewer__img" id="viewerImg" alt="">
+        <pre class="viewer__text" id="viewerText" tabindex="0" hidden></pre>
       </div>
       <div class="viewer__foot">
         <span class="viewer__status" id="viewerStatus" role="status" aria-live="polite"></span>
@@ -352,6 +367,13 @@ img.row__glyph{object-fit:cover}
     return IMAGE_EXTS.includes(name.slice(dot + 1).toLowerCase());
   }
 
+  const TEXT_EXTS = ["txt", "md"];
+  function isText(name) {
+    const dot = name.lastIndexOf(".");
+    if (dot < 0) return false;
+    return TEXT_EXTS.includes(name.slice(dot + 1).toLowerCase());
+  }
+
   async function uploadFile() {
     const file = fileInput.files[0];
     if (!file) { setStatus("Elegí un archivo primero.", "err"); return; }
@@ -380,43 +402,84 @@ img.row__glyph{object-fit:cover}
     if (!response.ok) throw new Error(String(response.status));
   }
 
-  // ---- Paste an image (shared immediately, no file picker) ----
+  // ---- Paste an image or text (shared immediately, no file picker) ----
   const pasteZone = document.getElementById("paste");
   const pasteHint = pasteZone.innerHTML;
 
+  // Extension used when pasted text is saved as a file; remembered per browser.
+  const PASTE_EXT_KEY = "localdrop.pasteExt";
+  const pasteFmtButtons = [...document.querySelectorAll(".paste-fmt__opt")];
+  let pasteTextExt = "txt";
+  try { if (localStorage.getItem(PASTE_EXT_KEY) === "md") pasteTextExt = "md"; } catch {}
+
+  function setPasteTextExt(ext) {
+    pasteTextExt = ext;
+    pasteFmtButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.ext === ext)));
+    try { localStorage.setItem(PASTE_EXT_KEY, ext); } catch {}
+  }
+  pasteFmtButtons.forEach((b) => b.addEventListener("click", () => setPasteTextExt(b.dataset.ext)));
+  setPasteTextExt(pasteTextExt);
+
   // Pasted images usually arrive as "image.png" and the server overwrites on name clashes,
   // so every paste gets its own timestamped name.
-  function pastedName(type, index) {
+  function pastedName(ext, index) {
     const d = new Date();
     const pad = (n, w = 2) => String(n).padStart(w, "0");
     const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-` +
       `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${pad(d.getMilliseconds(), 3)}`;
-    const ext = (type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/\+.*$/, "");
     return `paste-${stamp}${index ? "-" + index : ""}.${ext}`;
   }
 
+  function imageExt(type) {
+    return (type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/\+.*$/, "");
+  }
+
+  // Inputs keep their normal paste behavior (e.g. the search box); everything else shares.
+  function isEditableTarget(target) {
+    if (target === pasteZone) return false;
+    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
+      !!target?.isContentEditable;
+  }
+
+  function uploadErrorMessage(err, what) {
+    return err.message === "413"
+      ? `${what} supera el límite de subida del servidor.`
+      : `No se pudo compartir ${what.toLowerCase()}.`;
+  }
+
   async function handlePaste(e) {
+    const fromZone = e.currentTarget === pasteZone;
+    if (!fromZone && isEditableTarget(e.target)) return;
+
     const images = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
-    if (images.length === 0) {
-      // Let text paste work normally in the search box; only the paste zone reacts.
-      if (e.currentTarget === pasteZone) {
+    const text = images.length === 0 ? (e.clipboardData?.getData("text/plain") || "") : "";
+
+    if (images.length === 0 && text.trim() === "") {
+      if (fromZone) {
         e.preventDefault();
-        setStatus("El portapapeles no tiene una imagen.", "err");
+        setStatus("El portapapeles no tiene una imagen ni texto.", "err");
       }
       return;
     }
     e.preventDefault();
-    setStatus("Compartiendo imagen...");
+
     try {
-      for (let i = 0; i < images.length; i++) {
-        await postFile(images[i], pastedName(images[i].type, i));
+      if (images.length > 0) {
+        setStatus("Compartiendo imagen...");
+        for (let i = 0; i < images.length; i++) {
+          await postFile(images[i], pastedName(imageExt(images[i].type), i));
+        }
+        setStatus(images.length === 1 ? "Imagen pegada y compartida." : `${images.length} imágenes compartidas.`, "ok");
+      } else {
+        setStatus("Compartiendo texto...");
+        const name = pastedName(pasteTextExt, 0);
+        const type = pasteTextExt === "md" ? "text/markdown" : "text/plain";
+        await postFile(new Blob([text], { type: type + ";charset=utf-8" }), name);
+        setStatus(`Texto pegado y compartido como ${name}.`, "ok");
       }
-      setStatus(images.length === 1 ? "Imagen pegada y compartida." : `${images.length} imágenes compartidas.`, "ok");
       await loadFiles();
     } catch (err) {
-      setStatus(err.message === "413"
-        ? "La imagen supera el límite de subida del servidor."
-        : "No se pudo compartir la imagen.", "err");
+      setStatus(uploadErrorMessage(err, images.length > 0 ? "La imagen" : "El texto"), "err");
     } finally {
       pasteZone.innerHTML = pasteHint;
       pasteZone.blur();
@@ -491,7 +554,7 @@ img.row__glyph{object-fit:cover}
       thumb.type = "button";
       thumb.className = "row__thumb";
       thumb.setAttribute("aria-label", `Ver ${file.name}`);
-      thumb.onclick = () => openViewer(file.name, fileUrl);
+      thumb.onclick = () => openViewer(file, fileUrl, "image");
       thumb.appendChild(glyph);
       name.appendChild(thumb);
     } else {
@@ -534,13 +597,14 @@ img.row__glyph{object-fit:cover}
       }
     };
 
-    if (image) {
+    const viewKind = image ? "image" : isText(file.name) ? "text" : null;
+    if (viewKind) {
       const view = document.createElement("button");
       view.type = "button";
       view.className = "row__act";
       view.textContent = "OPEN";
       view.setAttribute("aria-label", `Ver ${file.name}`);
-      view.onclick = () => openViewer(file.name, fileUrl);
+      view.onclick = () => openViewer(file, fileUrl, viewKind);
       actions.appendChild(view);
     }
     actions.appendChild(get);
@@ -553,28 +617,49 @@ img.row__glyph{object-fit:cover}
     return row;
   }
 
-  // ---- Image viewer ----
+  // ---- File viewer (images and text) ----
   const viewer = document.getElementById("viewer");
   const viewerName = document.getElementById("viewerName");
+  const viewerBody = document.getElementById("viewerBody");
   const viewerImg = document.getElementById("viewerImg");
+  const viewerText = document.getElementById("viewerText");
   const viewerStatus = document.getElementById("viewerStatus");
   const viewerCopy = document.getElementById("viewerCopy");
   const viewerGet = document.getElementById("viewerGet");
   let viewerUrl = null;
+  let viewerKind = null;
 
   // Writing images to the clipboard requires a secure context (HTTPS or localhost).
   // Over plain http://<lan-ip> browsers do not expose navigator.clipboard at all.
   const canCopyImages = window.isSecureContext && !!navigator.clipboard?.write && typeof ClipboardItem !== "undefined";
+
+  // Bigger files are logs or dumps, not something to read in a modal; GET still works for them.
+  const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
 
   function setViewerStatus(text, kind) {
     viewerStatus.textContent = text;
     viewerStatus.className = "viewer__status" + (kind ? " is-" + kind : "");
   }
 
-  function openViewer(fileName, fileUrl) {
+  function openViewer(file, fileUrl, kind) {
     viewerUrl = fileUrl;
-    viewerName.textContent = fileName;
-    viewerImg.alt = fileName;
+    viewerKind = kind;
+    viewerName.textContent = file.name;
+
+    const isTextView = kind === "text";
+    viewerImg.hidden = isTextView;
+    viewerText.hidden = !isTextView;
+    viewerBody.classList.toggle("is-text", isTextView);
+
+    if (isTextView) {
+      viewerText.textContent = "";
+      viewerCopy.disabled = true;
+      viewer.showModal();
+      loadText(file, fileUrl);
+      return;
+    }
+
+    viewerImg.alt = file.name;
     viewerImg.src = fileUrl;
     viewerCopy.disabled = !canCopyImages;
     // Without the Clipboard API, the browser's own long-press menu still offers "Copy image".
@@ -582,9 +667,55 @@ img.row__glyph{object-fit:cover}
     viewer.showModal();
   }
 
+  async function loadText(file, fileUrl) {
+    if (file.sizeBytes > MAX_TEXT_PREVIEW_BYTES) {
+      setViewerStatus(`muy grande para previsualizar (${formatBytes(file.sizeBytes)}). usá GET.`, "err");
+      return;
+    }
+    setViewerStatus("cargando...");
+    try {
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error(String(response.status));
+      const text = await response.text();
+      // The user may have closed this file or opened another one while it was loading.
+      if (viewerUrl !== fileUrl) return;
+      viewerText.textContent = text;
+      viewerText.scrollTop = 0;
+      viewerCopy.disabled = false;
+      setViewerStatus(text.length === 0 ? "el archivo está vacío." : "");
+    } catch {
+      if (viewerUrl === fileUrl) setViewerStatus("no se pudo leer el archivo.", "err");
+    }
+  }
+
+  // navigator.clipboard.writeText also needs a secure context, but the legacy execCommand path
+  // does not, so text copy keeps working from a phone over plain http.
+  async function copyText(text) {
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    // Inside the dialog: everything outside an open modal is inert and cannot be selected.
+    viewer.appendChild(area);
+    try {
+      area.select();
+      area.setSelectionRange(0, text.length);
+      if (!document.execCommand("copy")) throw new Error("copy");
+    } finally {
+      area.remove();
+    }
+  }
+
   viewer.addEventListener("close", () => {
     viewerImg.removeAttribute("src");
+    viewerText.textContent = "";
     viewerUrl = null;
+    viewerKind = null;
   });
   // Close when clicking the backdrop (the click target is the dialog itself).
   viewer.addEventListener("click", (e) => { if (e.target === viewer) viewer.close(); });
@@ -615,7 +746,19 @@ img.row__glyph{object-fit:cover}
   }
 
   viewerCopy.addEventListener("click", async () => {
-    if (!viewerUrl || !canCopyImages) return;
+    if (!viewerUrl) return;
+
+    if (viewerKind === "text") {
+      try {
+        await copyText(viewerText.textContent);
+        setViewerStatus("texto copiado al portapapeles.", "ok");
+      } catch {
+        setViewerStatus("no se pudo copiar el texto.", "err");
+      }
+      return;
+    }
+
+    if (!canCopyImages) return;
     viewerCopy.disabled = true;
     setViewerStatus("copiando...");
     try {
